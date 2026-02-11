@@ -1,35 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>STL Zip Painter</title>
+    <title>STL & Metro East: Lead Quality Survey</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; }
-        #map { height: 90vh; width: 100%; background: #eee; }
-        .controls { height: 10vh; display: flex; align-items: center; gap: 10px; padding: 0 20px; background: #222; color: white; }
-        .rating-btn { padding: 8px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-        .active { outline: 3px solid #fff; transform: scale(1.1); }
-        #status { margin-left: auto; color: #aaa; font-size: 0.8em; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: white; }
+        #map { height: 88vh; width: 100%; background: #1a1a1a; border-top: 1px solid #444; }
+        .header { height: 12vh; background: #222; display: flex; flex-direction: column; justify-content: center; padding: 0 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 1000; position: relative; }
+        .controls { display: flex; align-items: center; gap: 10px; }
+        .rating-btn { width: 45px; height: 45px; cursor: pointer; border: 2px solid transparent; border-radius: 50%; font-weight: bold; color: #fff; transition: all 0.2s ease; font-size: 1.2em; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+        .rating-btn:hover { transform: scale(1.1); }
+        .active { border-color: white; transform: scale(1.15); box-shadow: 0 0 15px rgba(255,255,255,0.4); }
+        #status { margin-left: auto; color: #00ff00; font-family: monospace; font-size: 0.9em; }
+        .download-btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-left: 20px; }
+        .label { font-size: 0.9em; color: #aaa; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 </head>
 <body>
-    <div class="controls">
-        <span><b>Mode:</b></span>
-        <button class="rating-btn" onclick="setRating(10, this)" style="background:#2ecc71;">10</button>
-        <button class="rating-btn" onclick="setRating(5, this)" style="background:#f1c40f;">5</button>
-        <button class="rating-btn" onclick="setRating(1, this)" style="background:#e74c3c;">1</button>
-        <button onclick="exportData()" style="padding: 8px; cursor:pointer;">Download CSV</button>
-        <div id="status">Loading St. Louis Boundaries...</div>
+    <div class="header">
+        <div class="label">Step 1: Pick a Rating | Step 2: Paint the Zip Codes</div>
+        <div class="controls">
+            <button class="rating-btn" onclick="setRating(1, this)" style="background:#e74c3c;">1</button>
+            <button class="rating-btn" onclick="setRating(2, this)" style="background:#e67e22;">2</button>
+            <button class="rating-btn" onclick="setRating(3, this)" style="background:#f1c40f;">3</button>
+            <button class="rating-btn" onclick="setRating(4, this)" style="background:#27ae60;">4</button>
+            <button class="rating-btn" onclick="setRating(5, this)" style="background:#2ecc71;">5</button>
+            <button class="download-btn" onclick="exportData()">Export My Data</button>
+            <div id="status">Loading St. Louis DMA...</div>
+        </div>
     </div>
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         const map = L.map('map').setView([38.627, -90.199], 10);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
         let activeRating = null;
         let ratings = {};
+        const colors = { 1: "#e74c3c", 2: "#e67e22", 3: "#f1c40f", 4: "#27ae60", 5: "#2ecc71" };
 
         function setRating(val, btn) {
             activeRating = val;
@@ -37,48 +46,51 @@
             btn.classList.add('active');
         }
 
-        // Using a reliable Census-sourced GeoJSON for Missouri/Illinois area
-        // Note: This file is large, give it a few seconds to load.
-        const geoJsonUrl = 'https://raw.githubusercontent.com/OpenDataDE/State-zip-code-GeoJSON/master/mo_missouri_zip_codes_geo.min.json';
+        const moUrl = 'https://raw.githubusercontent.com/OpenDataDE/State-zip-code-GeoJSON/master/mo_missouri_zip_codes_geo.min.json';
+        const ilUrl = 'https://raw.githubusercontent.com/OpenDataDE/State-zip-code-GeoJSON/master/il_illinois_zip_codes_geo.min.json';
 
-        fetch(geoJsonUrl)
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('status').innerText = "Ready to Paint";
-                L.geoJson(data, {
-                    style: function(feature) {
-                        return { color: "#444", weight: 1, fillOpacity: 0.1, fillColor: "#fff" };
-                    },
-                    onEachFeature: function(feature, layer) {
-                        // Zip keys vary by file. Most use 'ZCTA5CE10' or 'zip'
-                        const zipCode = feature.properties.ZCTA5CE10 || feature.properties.zip || feature.properties.ZCTA5;
-                        
-                        layer.on('click', function() {
-                            if (!activeRating) return alert("Pick a number (1, 5, or 10) first!");
-                            
-                            const color = activeRating === 10 ? "#2ecc71" : (activeRating === 5 ? "#f1c40f" : "#e74c3c");
-                            layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
-                            ratings[zipCode] = activeRating;
-                        });
+        function loadZips(url) { return fetch(url).then(res => res.json()); }
 
-                        layer.bindTooltip("Zip: " + zipCode);
-                    }
-                }).addTo(map);
+        Promise.all([loadZips(moUrl), loadZips(ilUrl)])
+            .then(([moData, ilData]) => {
+                document.getElementById('status').innerText = "System Ready";
+                
+                const addData = (data) => {
+                    L.geoJson(data, {
+                        style: { color: "#444", weight: 1, fillOpacity: 0.1, fillColor: "#333" },
+                        onEachFeature: function(feature, layer) {
+                            const zip = feature.properties.ZCTA5CE10 || feature.properties.zip || feature.properties.ZCTA5;
+                            // Expanded filter for the full St. Louis DMA area
+                            const prefix = zip.substring(0,3);
+                            if (['630','631','633','620','622','624','634','635','636','637','638','639'].includes(prefix) || ['620','622','623','628','629'].includes(prefix)) {
+                                layer.on('click', function() {
+                                    if (!activeRating) return alert("Please select a rating button (1-5) at the top!");
+                                    layer.setStyle({ fillColor: colors[activeRating], fillOpacity: 0.75 });
+                                    ratings[zip] = activeRating;
+                                });
+                                layer.bindTooltip("<b>Zip: " + zip + "</b><br>Click to rate as " + (activeRating || "?"));
+                                layer.addTo(map);
+                            }
+                        }
+                    });
+                };
+                addData(moData);
+                addData(ilData);
             })
             .catch(err => {
-                document.getElementById('status').innerText = "Error loading map data.";
+                document.getElementById('status').innerText = "Connection Error";
                 console.error(err);
             });
 
         function exportData() {
-            if (Object.keys(ratings).length === 0) return alert("No ratings to export!");
+            if (Object.keys(ratings).length === 0) return alert("Nothing to export yet!");
             let csv = "ZipCode,Rating\n";
             for (let zip in ratings) { csv += `${zip},${ratings[zip]}\n`; }
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'stl_sales_survey.csv';
+            a.download = 'STL_DMA_Ratings.csv';
             a.click();
         }
     </script>
